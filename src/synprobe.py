@@ -1,12 +1,12 @@
 #! /usr/bin/env python
 
 from scapy.layers.inet import ICMP, sr, IP, TCP, sr1, RandShort, conf
-
+import netaddr
 import sys
 
 
-dst_ports = [7, 22, 25, 53, 80, 156, 443] # A list containing various well known ports (in event that "-p" is not used)
-ip = "0.0.0.0"
+dst_ports = [7, 22, 25, 53, 80, 156, 443]               # A list containing various well known ports (in event that "-p" is not used)
+ip = "0.0.0.0"                                          # The target address (or subnet)
 
 def main():
     global dst_ports, ip
@@ -25,35 +25,38 @@ def main():
     else:
         ip = str(sys.argv[1])
 
-    checkhost()
+    if '/' in ip:                                       # ip represents a subnet
+        network = netaddr.IPNetwork(ip)
+    else:
+        network = [ip]
 
-    for port in dst_ports:
-        if scanport(port) is True:
-            print("Port " + str(port) + ": open")
+    for host in network:
+        if checkhost(host):                             # Check if host is up
+            for port in dst_ports:                      # Scan through all of the ports
+                if scanport(port, host) is True:        # Port is open
+                    print("Port " + str(port) + ": open")
 
 
-def checkhost():
-    global ip
+def checkhost(host):
     conf.verb = 0
     try:
-        ping = sr(IP(dst = ip)/ICMP())
-        print "TARGET IS UP"
+        ping = sr(IP(dst = host)/ICMP())
+        return True
     except Exception:
-        print "TARGET IS DOWN"
+        return False
 
 
-def scanport(port):
-    global ip
+def scanport(port, host):
     conf.verb = 0
     src_port = RandShort()
-    SYNACK_packet = sr1(IP(dst = ip)/TCP(sport = src_port, dport = port, flags = "S"), timeout=1)
+    SYNACK_packet = sr1(IP(dst = str(host))/TCP(sport = src_port, dport = port, flags = "S"), timeout=1)
     #print type(SYNACK_packet)
     if SYNACK_packet is not None:
         pktflags = SYNACK_packet.getlayer(TCP).flags
 
         if pktflags == 0x12:
             SYNACK_packet.show()
-            RSTpkt = sr(IP(dst=ip) / TCP(sport=src_port, dport=port, flags="R"), timeout=1)
+            RSTpkt = sr(IP(dst=str(host)) / TCP(sport=src_port, dport=port, flags="R"), timeout=1)
             return True
         elif pktflags == 0x14:
             return False
