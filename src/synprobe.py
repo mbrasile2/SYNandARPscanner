@@ -1,7 +1,8 @@
 #! /usr/bin/env python
 
-from scapy.layers.inet import ICMP, sr, IP, TCP, sr1, RandShort, conf
+from scapy.all import *
 import netaddr
+import socket
 import sys
 
 
@@ -33,14 +34,13 @@ def main():
     for host in network:
         if checkhost(host):                             # Check if host is up
             for port in dst_ports:                      # Scan through all of the ports
-                if scanport(port, host) is True:        # Port is open
-                    print("Port " + str(port) + ": open")
+                scanport(port, host)       # Port is open
 
 
 def checkhost(host):
     conf.verb = 0
     try:
-        ping = sr(IP(dst = host)/ICMP())
+        ping = sr(IP(dst = host)/ICMP(), timeout=5)
         return True
     except Exception:
         return False
@@ -50,19 +50,20 @@ def scanport(port, host):
     conf.verb = 0
     src_port = RandShort()
     SYNACK_packet = sr1(IP(dst = str(host))/TCP(sport = src_port, dport = port, flags = "S"), timeout=1)
-    #print type(SYNACK_packet)
     if SYNACK_packet is not None:
         pktflags = SYNACK_packet.getlayer(TCP).flags
 
         if pktflags == 0x12:
-            SYNACK_packet.show()
-            RSTpkt = sr(IP(dst=str(host)) / TCP(sport=src_port, dport=port, flags="R"), timeout=1)
-            return True
-        elif pktflags == 0x14:
-            return False
-    else:
-        return False
 
+            ACK_packet = IP(dst=str(host)) / TCP(sport=src_port, dport=port, flags="R")
+            send(ACK_packet)
 
+            s = socket.socket()
+            s.connect((host, port))
+            if port != 22:
+                s.sendall("GET / HTTP/1.1\r\nHost: " + host + "\r\n\r\n")
+            banner = s.recv(1024)
+            print("Port " + str(port) + ": open. Response: " + banner)
+            s.close()
 
 main()
